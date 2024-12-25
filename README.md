@@ -211,6 +211,121 @@ void main() {
 }
 ```
 
+### 5. 树顶星星效果
+
+树顶的星星由两部分组成：
+- 3D 星星模型：使用发光材质
+- 环绕星星的粒子系统：创造梦幻效果
+
+```javascript
+// 1. 加载星星模型
+loadStar() {
+  const loader = new GLTFLoader()
+  const dracoLoader = new DRACOLoader()
+  dracoLoader.setDecoderPath('./draco/')
+  loader.setDRACOLoader(dracoLoader)
+
+  loader.load('./model/star.glb', (gltf) => {
+    this.star = gltf.scene
+    this.star.scale.set(this.params.星星大小, this.params.星星大小, this.params.星星大小)
+    this.star.position.y = this.params.树高 + 0.5
+
+    // 设置发光材质
+    this.star.traverse((child) => {
+      if (child.isMesh) {
+        child.material = new THREE.MeshStandardMaterial({
+          color: this.params.星星颜色,
+          emissive: this.params.星星颜色,
+          emissiveIntensity: 1,
+          metalness: 0.8,
+          roughness: 0.2
+        })
+      }
+    })
+
+    this.scene.add(this.star)
+    // 创建星星周围的粒子
+    this.createStarParticles()
+  })
+}
+
+// 2. 创建环绕星星的粒子系统
+createStarParticles() {
+  const geometry = new THREE.BufferGeometry()
+  const particleCount = 50
+  const positions = new Float32Array(particleCount * 3)
+  const scales = new Float32Array(particleCount)
+
+  // 在球形范围内随机分布粒子
+  for (let i = 0; i < particleCount; i++) {
+    const i3 = i * 3
+    const radius = 0.3
+    const theta = Math.random() * Math.PI * 2
+    const phi = Math.random() * Math.PI
+
+    positions[i3] = radius * Math.sin(phi) * Math.cos(theta)
+    positions[i3 + 1] = radius * Math.sin(phi) * Math.sin(theta)
+    positions[i3 + 2] = radius * Math.cos(phi)
+
+    scales[i] = Math.random()
+  }
+
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setAttribute('scale', new THREE.BufferAttribute(scales, 1))
+
+  // 使用自定义着色器材质
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      time: { value: 0 },
+      color: { value: new THREE.Color(this.params.星星颜色) }
+    },
+    vertexShader: starParticleVertexShader,
+    fragmentShader: starParticleFragmentShader,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  })
+
+  this.starParticles = new THREE.Points(geometry, material)
+  this.starParticles.position.copy(this.star.position)
+  this.scene.add(this.starParticles)
+}
+```
+
+星星粒子的着色器效果：
+
+```glsl
+// 顶点着色器
+void main() {
+  vScale = scale;
+  
+  // 粒子绕中心旋转
+  float angle = time * (0.1 + vScale * 0.5);
+  vec3 pos = position;
+  pos.x = position.x * cos(angle) - position.z * sin(angle);
+  pos.z = position.x * sin(angle) + position.z * cos(angle);
+  
+  vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+  gl_PointSize = size * scale * (300.0 / -mvPosition.z);
+  gl_Position = projectionMatrix * mvPosition;
+}
+
+// 片元着色器
+void main() {
+  // 创建柔和的圆形
+  float strength = 1.0 - smoothstep(0.0, 0.5, length(gl_PointCoord - vec2(0.5)));
+  
+  // 闪烁效果
+  float twinkle = sin(time * 3.0 + vScale * 10.0) * 0.5 + 0.5;
+  
+  // 彩虹色渐变
+  vec3 rainbow = 0.5 + 0.5 * cos(6.28318 * (vScale + vec3(0.0, 0.33, 0.67)));
+  vec3 finalColor = mix(color, rainbow, 0.5) * (1.0 + twinkle * 0.5);
+  
+  gl_FragColor = vec4(finalColor, strength * opacity);
+}
+```
+
 ### 5. 满天星效果
 
 实现缓慢降落的星星效果：
@@ -333,7 +448,7 @@ setupControls(params, callbacks) {
   - 发光强度：整体的泛光强度（0-3）
   - 发光半径：泛光效果的扩散范围（0-1）
   - 发光阈值：产生泛光的亮度阈值（0-1）
-  - 曝光度：整体画面的明暗程度（0-2）
+  - 曝光度：整体���面的明暗程度（0-2）
 
 ## 性能优化
 
